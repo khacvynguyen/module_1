@@ -35,7 +35,7 @@ def on_model_change():
 with st.sidebar:
     st.title("Chat app")
     # Model selection dropdown
-    model_options = ["gemini-2.0-flash", "gemini-2.5-flash-preview-04-17", "gemini-2.5-pro-preview-05-06"]
+    model_options = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"]
     st.session_state["model"] = st.selectbox(
         "Select Model",
         options=model_options,
