@@ -2,10 +2,12 @@ import traceback
 import json
 import os
 import logging
+import asyncio
 from typing import List, Callable, Optional, Dict, Any
-from openai import OpenAI
-from tools.arxiv_research import ARXIV_TOOL_SCHEMA, execute_tool
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
+
+from tools.arxiv_research import ARXIV_TOOL_SCHEMA, execute_tool
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -18,15 +20,15 @@ MAX_TOOL_CALL_ITERATIONS = 10  # Prevent infinite loops
 
 load_dotenv()
 
-DEFAULT_LLM_CLIENT = OpenAI(
+DEFAULT_LLM_CLIENT = AsyncOpenAI(
     api_key=os.getenv("GOOGLE_API_KEY"),
     base_url=os.getenv("GOOGLE_OPENAI_API_ENDPOINT")
 )
 
 
-def process_query(
+async def process_query(
     query: str,
-    client: OpenAI = DEFAULT_LLM_CLIENT,
+    client: AsyncOpenAI = DEFAULT_LLM_CLIENT,
     model: str = DEFAULT_MODEL,
     tools: List[Dict[str, Any]] = ARXIV_TOOL_SCHEMA,
     tool_executor: Callable = execute_tool,
@@ -37,7 +39,7 @@ def process_query(
     
     Args:
         query: The user's query string
-        client: OpenAI client instance
+        client: AsyncOpenAI client instance
         model: Model name to use
         tools: List of tool schemas
         tool_executor: Function to execute tools
@@ -59,7 +61,7 @@ def process_query(
             logger.debug(f"Starting iteration {iteration_count}")
             
             # Get LLM response
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=model,
                 messages=messages,
                 tools=tools,
@@ -91,7 +93,12 @@ def process_query(
                     logger.info(f"Calling tool {tool_name} with args {tool_args}")
                     
                     try:
-                        result = tool_executor(tool_name, tool_args)
+                        # If tool_executor is async, await it; otherwise call it normally
+                        if asyncio.iscoroutinefunction(tool_executor):
+                            result = await tool_executor(tool_name, tool_args)
+                        else:
+                            result = tool_executor(tool_name, tool_args)
+                        
                         if result is None:
                             result = "The operation completed but didn't return any results."
                     except Exception as e:
@@ -126,7 +133,9 @@ def process_query(
     return None
 
 
-def chat_loop() -> None:
+async def chat_loop(
+    query_executor: Callable = process_query,
+) -> None:
     """Interactive chat loop for processing queries."""
     print("Type your queries or 'quit' to exit.")
     
@@ -141,7 +150,7 @@ def chat_loop() -> None:
                 print("Please enter a query.")
                 continue
             
-            result = process_query(query)
+            result = await query_executor(query)
             if result:
                 print(f"\nResponse: {result}")
             else:
