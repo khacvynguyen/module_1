@@ -149,5 +149,31 @@ def extract_info(paper_id: str) -> str:
     return f"There's no saved information related to paper {paper_id}."
 
 
+MAPPING_TOOL_FUNCTION = {
+    "search_papers": search_papers,
+    "extract_info": extract_info
+}
+
+
+def execute_tool(tool_name, tool_args):
+    
+    result = MAPPING_TOOL_FUNCTION[tool_name](**tool_args)
+
+    if result is None:
+        result = "The operation completed but didn't return any results."
+        
+    elif isinstance(result, list):
+        result = ', '.join(result)
+        
+    elif isinstance(result, dict):
+        # Convert dictionaries to formatted JSON strings
+        result = json.dumps(result, indent=2)
+    
+    else:
+        # For any other type, convert using str()
+        result = str(result)
+    return result
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

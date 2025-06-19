@@ -1,137 +1,158 @@
 import traceback
 import json
 import os
+import logging
+from typing import List, Callable, Optional, Dict, Any
 from openai import OpenAI
-from typing import List
-from tools.arxiv_research import (
-    ARXIV_TOOL_SCHEMA,
-    search_papers,
-    extract_info
-)
+from tools.arxiv_research import ARXIV_TOOL_SCHEMA, execute_tool
 from dotenv import load_dotenv
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Constants
+DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MAX_TOKENS = 2024
+MAX_TOOL_CALL_ITERATIONS = 10  # Prevent infinite loops
 
 load_dotenv()
 
-client = OpenAI(
-    api_key = os.getenv("GOOGLE_API_KEY"),
-    base_url = os.getenv("GOOGLE_OPENAI_API_ENDPOINT")
+DEFAULT_LLM_CLIENT = OpenAI(
+    api_key=os.getenv("GOOGLE_API_KEY"),
+    base_url=os.getenv("GOOGLE_OPENAI_API_ENDPOINT")
 )
-
-MAPPING_TOOL_FUNCTION = {
-    "search_papers": search_papers,
-    "extract_info": extract_info
-}
-
-
-def execute_tool(tool_name, tool_args):
-    
-    result = MAPPING_TOOL_FUNCTION[tool_name](**tool_args)
-
-    if result is None:
-        result = "The operation completed but didn't return any results."
-        
-    elif isinstance(result, list):
-        result = ', '.join(result)
-        
-    elif isinstance(result, dict):
-        # Convert dictionaries to formatted JSON strings
-        result = json.dumps(result, indent=2)
-    
-    else:
-        # For any other type, convert using str()
-        result = str(result)
-    return result
 
 
 def process_query(
     query: str,
-    model: str = "gemini-2.5-flash"
-):
+    client: OpenAI = DEFAULT_LLM_CLIENT,
+    model: str = DEFAULT_MODEL,
+    tools: List[Dict[str, Any]] = ARXIV_TOOL_SCHEMA,
+    tool_executor: Callable = execute_tool,
+    max_iterations: int = MAX_TOOL_CALL_ITERATIONS
+) -> Optional[str]:
+    """
+    Process a query using LLM with tool calling capabilities.
+    
+    Args:
+        query: The user's query string
+        client: OpenAI client instance
+        model: Model name to use
+        tools: List of tool schemas
+        tool_executor: Function to execute tools
+        max_iterations: Maximum number of tool call iterations
+        
+    Returns:
+        Final response content or None if processing failed
+    """
+    if not query.strip():
+        logger.warning("Empty query provided")
+        return None
+        
     messages = [{'role': 'user', 'content': query}]
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        tools=ARXIV_TOOL_SCHEMA,
-        tool_choice="auto",
-        max_tokens = 2024
-    )
+    iteration_count = 0
     
-    if not response:
-        print("No response from LLM")
-        return
-    
-    # Process the model's response
-    response_message = response.choices[0].message
-    messages.append(response_message)
-    process_query = True
-
-    # import pdb; pdb.set_trace()
-
-    while process_query:
-        # Handle tool calls
-        if response_message.tool_calls:
-            for tool_call in response_message.tool_calls:
-                tool_id = tool_call.id
-                tool_name = tool_call.function.name
-                tool_args = json.loads(tool_call.function.arguments)
-                print(f"Calling tool {tool_name} with args {tool_args}")
-                
-                try:
-                    result = execute_tool(tool_name, tool_args)
-                except Exception as e:
-                    print(f"Error executing tool {tool_name}: {str(e)}")
-                    if tool_name == "search_papers":
-                        print("Using sample data for search_papers")
-                        result = str(json.loads(open("assets/sample_info.json", "r").read()))
-                    else:
-                        result = "The operation completed but didn't return any results."
-
-                messages.append({
-                    "tool_call_id": tool_id,
-                    "role": "tool",
-                    "name": tool_name,
-                    "content": result
-                })
-
-            # continue call LLM with the new messages
+    try:
+        while iteration_count < max_iterations:
+            iteration_count += 1
+            logger.debug(f"Starting iteration {iteration_count}")
+            
+            # Get LLM response
             response = client.chat.completions.create(
-                model = model, 
-                tools = ARXIV_TOOL_SCHEMA,
-                messages = messages
+                model=model,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                max_tokens=DEFAULT_MAX_TOKENS
             )
-            if not response:
-                print("No response from LLM")
-                break
-    
+            
+            if not response or not response.choices:
+                logger.error("No response from LLM")
+                return None
+            
             response_message = response.choices[0].message
             messages.append(response_message)
-
-            if not response_message.tool_calls:
-                print(response_message.content)
-                process_query = False
-
-        else:
-            print(response_message.content)
-            process_query = False
+            
+            # Handle tool calls
+            if response_message.tool_calls:
+                logger.info(f"Processing {len(response_message.tool_calls)} tool calls")
                 
-            if len(response.content) == 1:
-                process_query = False
+                for tool_call in response_message.tool_calls:
+                    tool_id = tool_call.id
+                    tool_name = tool_call.function.name
+                    
+                    try:
+                        tool_args = json.loads(tool_call.function.arguments)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse tool arguments: {e}")
+                        continue
+                    
+                    logger.info(f"Calling tool {tool_name} with args {tool_args}")
+                    
+                    try:
+                        result = tool_executor(tool_name, tool_args)
+                        if result is None:
+                            result = "The operation completed but didn't return any results."
+                    except Exception as e:
+                        logger.error(f"Error executing tool {tool_name}: {str(e)}")
+                        result = f"Error executing tool {tool_name}: {str(e)}"
+
+                    messages.append({
+                        "tool_call_id": tool_id,
+                        "role": "tool",
+                        "name": tool_name,
+                        "content": str(result)
+                    })
+                
+                # Continue with next iteration to get LLM response
+                continue
+            
+            # No tool calls, return final response
+            final_content = response_message.content
+            if final_content:
+                logger.info("Query processing completed successfully")
+                return final_content
+            else:
+                logger.warning("Empty response content received")
+                return None
+                
+    except Exception as e:
+        logger.error(f"Error during query processing: {str(e)}")
+        logger.debug(traceback.format_exc())
+        return None
+    
+    logger.warning(f"Maximum iterations ({max_iterations}) reached")
+    return None
 
 
-#  Chat Loop
-def chat_loop():
+def chat_loop() -> None:
+    """Interactive chat loop for processing queries."""
     print("Type your queries or 'quit' to exit.")
+    
     while True:
         try:
             query = input("\nQuery: ").strip()
-            if query.lower() == 'quit':
+            if query.lower() in ['quit', 'exit', 'q']:
+                print("Goodbye!")
                 break
-    
-            process_query(query)
-            print("\n")
+            
+            if not query:
+                print("Please enter a query.")
+                continue
+            
+            result = process_query(query)
+            if result:
+                print(f"\nResponse: {result}")
+            else:
+                print("\nNo response generated. Please try again.")
+                
+        except KeyboardInterrupt:
+            print("\n\nGoodbye!")
+            break
         except Exception as e:
-            print(f"\nError: {str(e)}")
-            traceback.print_exc()
+            logger.error(f"Unexpected error in chat loop: {str(e)}")
+            print(f"\nAn error occurred: {str(e)}")
 
 
 if __name__ == "__main__":
