@@ -23,5 +23,5 @@ sudo apt-get install npm
 
 Run the inspector
 ```bash
-npx @modelcontextprotocol/inspector python tools/arxiv_research.py
+npx @modelcontextprotocol/inspector python explore/tools/arxiv_research.py
 ```
