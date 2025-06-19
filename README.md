@@ -22,7 +22,7 @@ streamlit run chat_ui.py
 ## Simple LLM chat with function calling
 
 ```bash
-python llm_tool_use.py chat_loop
+PYTHONPATH=. python explore/llm_tool_use.py chat_loop
 ```
 
 ## Building MCP
