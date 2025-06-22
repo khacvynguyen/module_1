@@ -27,6 +27,7 @@ npx @modelcontextprotocol/inspector python explore/tools/arxiv_research.py
 ```
 
 2. Fetch server
+- Add package `pip-system-certs` to `servers/src/fetch/pyproject.toml` to solve `[SSL: CERTIFICATE_VERIFY_FAILED]`
 ```bash
 cd servers/src/fetch
 npx @modelcontextprotocol/inspector uv run mcp-server-fetch
