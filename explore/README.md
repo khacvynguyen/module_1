@@ -35,7 +35,7 @@ npx @modelcontextprotocol/inspector uv run mcp-server-fetch
 - Run with pip
 ```bash
 # pip install mcp-server-fetch
-npx @modelcontextprotocol/inspector python -m mcp-server-fetch
+npx @modelcontextprotocol/inspector python -m mcp_server_fetch
 ```
 
 3. File system server
