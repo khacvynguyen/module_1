@@ -32,6 +32,11 @@ npx @modelcontextprotocol/inspector python explore/tools/arxiv_research.py
 cd servers/src/fetch
 npx @modelcontextprotocol/inspector uv run mcp-server-fetch
 ```
+- Run with pip
+```bash
+# pip install mcp-server-fetch
+npx @modelcontextprotocol/inspector python -m mcp-server-fetch
+```
 
 3. File system server
 
