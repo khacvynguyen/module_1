@@ -21,12 +21,26 @@ Install npm (if not already installed)
 sudo apt-get install npm
 ```
 
-Run the inspector
+1. Arxiv research server
 ```bash
 npx @modelcontextprotocol/inspector python explore/tools/arxiv_research.py
 ```
 
-## MCP chatbot
+2. Fetch server
+```bash
+cd servers/src/fetch
+npx @modelcontextprotocol/inspector uv run mcp-server-fetch
+```
+
+3. File system server
+
+```bash
+# from current directory
+npx @modelcontextprotocol/inspector npx -y @modelcontextprotocol/server-filesystem
+```
+
+
+### MCP chatbot
 
 ```bash
 PYTHONPATH=. python explore/mcp_chatbot.py

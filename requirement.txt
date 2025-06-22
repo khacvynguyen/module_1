@@ -15,3 +15,6 @@ tiktoken==0.8.0
 litellm==1.72.6
 fire==0.7.0
 streamlit==1.45.1
+arxiv>=2.2.0
+mcp>=1.7.1
+pypdf2>=3.0.1
