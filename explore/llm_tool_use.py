@@ -21,8 +21,8 @@ MAX_TOOL_CALL_ITERATIONS = 10  # Prevent infinite loops
 load_dotenv()
 
 DEFAULT_LLM_CLIENT = AsyncOpenAI(
-    api_key=os.getenv("GOOGLE_API_KEY"),
-    base_url=os.getenv("GOOGLE_OPENAI_API_ENDPOINT")
+    api_key=os.getenv("LLM_API_KEY"),
+    base_url=os.getenv("LLM_API_URL")
 )
 
 
