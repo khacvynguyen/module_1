@@ -8,4 +8,4 @@ run_security_tests.py
 test_requirements.txt
 test_setup.py
 langfuse/
-model_api/gpt-neo-125m
+model_api/gpt-neo-125m/*
