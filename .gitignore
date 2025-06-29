@@ -1,4 +1,10 @@
-.env*
 __pycache__/
 */__pycache__
 data/
+call*
+pentest_script.sh
+pytest*
+run_security_tests.py
+test_requirements.txt
+test_setup.py
+langfuse/
