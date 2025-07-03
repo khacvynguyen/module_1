@@ -41,6 +41,35 @@ services:
     networks:
       - llm-network
 
+  # Client API Service (FastAPI interface for prompts)
+  client-api:
+    build:
+      context: ./client_api
+      dockerfile: Dockerfile
+    container_name: client-api
+    ports:
+      - "8001:8001"
+    depends_on:
+      model-api:
+        condition: service_healthy
+      langfuse-web:
+        condition: service_started
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LANGFUSE_PUBLIC_KEY=pk-lf-cf2554fb-652d-4b1a-b126-6236800a9408
+      - LANGFUSE_SECRET_KEY=sk-lf-7d328fde-7986-4db9-8a52-0ec3e544f179
+      - LANGFUSE_HOST=http://langfuse-web:3000
+    volumes:
+      - ./client_api:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - llm-network
+
   # Langfuse Services
   langfuse-worker:
     image: langfuse/langfuse-worker:3

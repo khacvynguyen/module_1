@@ -3,11 +3,9 @@ import json
 import time
 import os
 from langfuse import observe
-
-# Configure Langfuse environment variables - these should match docker-compose.yml
-os.environ['LANGFUSE_PUBLIC_KEY'] = 'pk-lf-cf2554fb-652d-4b1a-b126-6236800a9408'
-os.environ['LANGFUSE_SECRET_KEY'] = 'sk-lf-7d328fde-7986-4db9-8a52-0ec3e544f179'
-os.environ['LANGFUSE_HOST'] = 'http://langfuse-web:3000'
+from litellm import completion
+from dotenv import load_dotenv
+load_dotenv()
 
 def wait_for_service(url, max_retries=30, delay=2):
     """Wait for a service to be ready"""
@@ -25,25 +23,26 @@ def wait_for_service(url, max_retries=30, delay=2):
 
 @observe()
 def make_inference_request(prompt, max_tokens=50, temperature=0.8):
-    """Make a direct HTTP request to the model API"""
-    url = "http://model-api:8000/v1/completions"
-    headers = {"Content-Type": "application/json"}
-    
-    payload = {
-        "prompt": prompt,
-        "max_tokens": max_tokens,
-        "temperature": temperature
-    }
-    
+    """Make inference request using LiteLLM to Gemini (Google)"""
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
-        response.raise_for_status()
+        # Use LiteLLM to call Gemini API
+        response = completion(
+            model="gemini/gemini-1.5-flash-8b",  # Gemini provider and model name
+            api_key="AIzaSyD_nT97B_6M37dOEx0Ts_qsC2cZDZyhvwY",  # Set your Gemini API key in env
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
         
-        result = response.json()
-        return result["choices"][0]["text"]
-        
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Request failed: {e}")
+        # Extract the response text
+        if response and hasattr(response, 'choices') and len(response.choices) > 0:
+            return response.choices[0].message.content
+        else:
+            print("❌ No response content received")
+            return None
+            
+    except Exception as e:
+        print(f"❌ LiteLLM request failed: {e}")
         return None
 
 @observe()
@@ -64,9 +63,9 @@ def main():
     print("🚀 Starting LLM client with monitoring...")
     
     # Wait for model API
-    if not wait_for_service("http://model-api:8000/health"):
-        print("❌ Model API service is not ready!")
-        return
+    # if not wait_for_service("http://model-api:8000/health"):
+    #     print("❌ Model API service is not ready!")
+    #     return
     
     # Wait for Langfuse web
     if not wait_for_service("http://langfuse-web:3000"):
