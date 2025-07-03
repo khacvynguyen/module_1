@@ -1,0 +1,66 @@
+basic_rag_01: |
+  Answer the users question based only on the following context:
+
+  <context>
+  {context}
+  </context>
+
+  Question: {question}
+
+rewrite_01: |
+  Provide a better search query for web search engine to answer the given question, end the queries with `**`.
+  Question: {x} 
+  Answer:
+
+synth_qa_01: |
+  You are an assistant tasked with generating questions and answers. Based on the following context, generate {num_pairs} question-answer pairs:
+
+  Context:
+  {context}
+
+  Format:
+  1. Question: ...
+    Answer: ...
+  2. Question: ...
+    Answer: ...
+
+synth_qa_json_01: |
+  You are an AI assistant tasked with generating question-answer pairs from a given context.
+  Produce the output as JSON in the specified schema.
+
+  Context:
+  {context}
+
+  Schema:
+  {schema}
+
+  Generate exactly {num_pairs} question-answer pairs.
+
+synth_question_01: |
+  You are an AI assistant tasked with generating questions from a given context.
+
+  Context:
+  {context}
+
+  Generate {num_questions} questions that can be answered by given context.
+
+
+synth_answer_01: |
+  You are an AI assistant tasked with answer questions from a given context.
+
+  Context:
+  {context}
+
+  Questions:
+  {questions}
+
+  Output:
+
+
+question_rewriter_01: |
+  You are an AI assistant tasked with rephrase questions from a given context.
+  
+  Questions:
+  {questions}
+
+  Output:
