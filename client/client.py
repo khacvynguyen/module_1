@@ -7,6 +7,9 @@ from litellm import completion
 from dotenv import load_dotenv
 load_dotenv()
 
+GEMINI_API_KEY=os.getenv("GEMINI_API_KEY")
+
+
 def wait_for_service(url, max_retries=30, delay=2):
     """Wait for a service to be ready"""
     for i in range(max_retries):
@@ -28,7 +31,7 @@ def make_inference_request(prompt, max_tokens=50, temperature=0.8):
         # Use LiteLLM to call Gemini API
         response = completion(
             model="gemini/gemini-1.5-flash-8b",  # Gemini provider and model name
-            api_key="AIzaSyD_nT97B_6M37dOEx0Ts_qsC2cZDZyhvwY",  # Set your Gemini API key in env
+            api_key=GEMINI_API_KEY,  # Set your Gemini API key in env
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
             temperature=temperature
@@ -59,6 +62,8 @@ def programming_advice():
 
 @observe()
 def main():
+    print('hehe')
+    print(GEMINI_API_KEY)
     # Wait for services to be ready
     print("🚀 Starting LLM client with monitoring...")
     
