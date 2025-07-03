@@ -1,6 +1,8 @@
 __pycache__/
 */__pycache__
 data/
+.cursorignore
+chroma_db/
 call*
 pentest_script.sh
 pytest*

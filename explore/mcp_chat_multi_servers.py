@@ -41,8 +41,8 @@ class MCP_ChatBot:
 
         self.server_config_path = server_config_path
         self.client = AsyncOpenAI(
-            api_key=os.getenv("GOOGLE_API_KEY"),
-            base_url=os.getenv("GOOGLE_OPENAI_API_ENDPOINT")
+            api_key=os.getenv("LLM_API_KEY"),
+            base_url=os.getenv("LLM_API_URL")
         )
         assert self.client is not None, "LLM client is not initialized"
 

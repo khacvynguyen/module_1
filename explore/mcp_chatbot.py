@@ -12,8 +12,8 @@ from llm_tool_use import process_query, chat_loop
 load_dotenv()
 
 llm_client = AsyncOpenAI(
-    api_key=os.getenv("GOOGLE_API_KEY"),
-    base_url=os.getenv("GOOGLE_OPENAI_API_ENDPOINT")
+    api_key=os.getenv("LLM_API_KEY"),
+    base_url=os.getenv("LLM_API_URL")
 )
 
 
