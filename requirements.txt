@@ -18,3 +18,4 @@ streamlit==1.45.1
 arxiv>=2.2.0
 mcp>=1.7.1
 pypdf2>=3.0.1
+requests>=2.28.0

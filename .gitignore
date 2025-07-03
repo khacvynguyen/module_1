@@ -1,6 +1,14 @@
-.env*
 __pycache__/
 */__pycache__
 data/
 .cursorignore
 chroma_db/
+call*
+pentest_script.sh
+pytest*
+run_security_tests.py
+test_requirements.txt
+test_setup.py
+langfuse/
+model_api/gpt-neo-125m/*
+.env
