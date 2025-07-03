@@ -9,3 +9,4 @@ test_requirements.txt
 test_setup.py
 langfuse/
 model_api/gpt-neo-125m/*
+.env
