@@ -13,3 +13,4 @@ langfuse/
 model_api/gpt-neo-125m/*
 .env
 docker-compose.yml
+*.sh
