@@ -12,4 +12,6 @@ test_setup.py
 langfuse/
 model_api/gpt-neo-125m/*
 .env
+feat/data_pipeline
 explore/mcp-servers
+*.sh
