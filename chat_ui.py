@@ -1,7 +1,7 @@
 import sys
 import os
 import json
-from llm_inference.llm_inference_base import ai_completion, ai_completion_with_backoff, truncate_text, get_length
+from llm_inference.llm_inference_base import llm_completion, truncate_text, get_length
 from llm_inference.llm_response_parser import parse_llm_response
 from dotenv import load_dotenv
 import streamlit as st
@@ -62,7 +62,7 @@ if prompt := st.chat_input("Input your message here"):
     with st.chat_message("assistant"):
         oai_messages = [{"role": "system", "content": st.session_state["system_prompt"]}] + st.session_state.messages
         print(oai_messages)
-        response = ai_completion(
+        response = llm_completion(
             model=st.session_state["model"],
             messages=oai_messages,
             stream=True,

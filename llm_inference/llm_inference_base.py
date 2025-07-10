@@ -1,241 +1,282 @@
 import os
-import time
-from typing import Dict, get_type_hints
-
 import tiktoken
-import anthropic
-import google.generativeai as google_genai
+from structlog import get_logger
+from typing import Generator, AsyncGenerator
+from openai import OpenAI, AsyncOpenAI
 from dotenv import load_dotenv
-from openai import OpenAI
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from tenacity import retry, stop_after_attempt, wait_exponential
-
-enc = tiktoken.encoding_for_model("gpt-4o-mini")
-
+import google.generativeai as genai
 
 load_dotenv()
 
-# Set your API keys here
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-TOGETHERAI_API_KEY = os.getenv("TOGETHERAI_API_KEY", "")
+# Configure Gemini if API key is available
+if os.getenv("GOOGLE_API_KEY"):
+    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
+logger = get_logger(__name__)
+DEFAULT_ENCODE_MODEL = tiktoken.encoding_for_model("gpt-4o-mini")
 
-# Initialize OpenAI client
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
+LLM_TIMEOUT = os.getenv("LLM_TIMEOUT", 60)
+LLM_MAX_RETRIES = os.getenv("LLM_MAX_RETRIES", 3)
 
+LLM_API_KEY = os.getenv("LLM_API_KEY", os.getenv("OPENAI_API_KEY"))
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
 
-# Initialize TogetherAI client
-together_client = OpenAI(
-    api_key=TOGETHERAI_API_KEY,
-    base_url="https://api.together.xyz/v1",
+DEFAULT_CLIENT = OpenAI(
+    api_key=LLM_API_KEY,
+    base_url=LLM_BASE_URL
 )
 
-# Initialize Anthropic client
-anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-# Configure Google Generative AI
-google_genai.configure(api_key=GOOGLE_API_KEY)
-
-DEFAULT_SAFETY_SETTINGS: Dict[HarmCategory, HarmBlockThreshold] = {
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_UNSPECIFIED: HarmBlockThreshold.BLOCK_NONE,
-}
-DEFAULT_MAX_TOKENS = 2000
-DEFAULT_TEMPERATURE = 0.7
-LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 60))
-LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", 3))
+DEFAULT_ASYNC_CLIENT = AsyncOpenAI(
+    api_key=LLM_API_KEY,
+    base_url=LLM_BASE_URL
+)
 
 
-def format_google_messages(messages):
-    """Convert OpenAI-style messages to Google's format"""
-    formatted_messages = []
-    system_message = None
+if not DEFAULT_CLIENT:
+    logger.warning("Default LLM client is not initialized")
 
-    for msg in messages:
-        if msg["role"] == "system":
-            system_message = msg["content"]
-        else:
-            formatted_messages.append({"role": msg["role"], "parts": [msg["content"]]})
-
-    return system_message, formatted_messages
+if not DEFAULT_ASYNC_CLIENT:
+    logger.warning("Default LLM async client is not initialized")
 
 
-def gemini_stream_wrapper(stream):
-    for chunk in stream:
-        yield chunk.text 
-
-
-def ai_completion(**kwargs):
-    """
-    # Example usage
-    params = {
-        "model": "gemini-pro",
-        "messages": [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "Write a story about a magic backpack."}
-        ],
-        "max_tokens": 1000,
-        "temperature": 0.7,
-    }
-
-    params = {
-        "api_key: "sk...",
-        "model": "gpt-4o-mini",
-        "messages": [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "Write a story about a magic backpack."}
-        ],
-        "max_tokens": 1000,
-        "temperature": 0.7,
-        "stream": True
-    }
-    """
-    try:
-        # signal.alarm(60)
-
-        model_name = kwargs.get("model", "")
-        if not model_name:
-            raise ValueError("Model name is required")
-        
-        provider = get_provider_client(model_name)
-
-        if provider == "openai":
-            # Initialize OpenAI client
-            api_key = kwargs.pop("api_key", OPENAI_API_KEY)
-            openai_client = OpenAI(api_key=api_key)
-            response = openai_client.chat.completions.create(**kwargs)
-            if kwargs.get("stream"):
-                return {"content": response}
-            
-            else:
-                result = {"content": response.choices[0].message.content}
-
-        elif provider == "google":
-
-            generation_config = dict(
-                max_output_tokens=kwargs.get("max_tokens", DEFAULT_MAX_TOKENS),
-                temperature=kwargs.get("temperature", DEFAULT_TEMPERATURE),
-                response_mime_type="text/plain",
-            )
-
-            model = google_genai.GenerativeModel(
-                model_name=model_name,
-                generation_config=generation_config,
-            )
-
-            # Format messages for Google's API
-            system_message, chat_history = format_google_messages(kwargs["messages"])
-
-            # Create chat session with system message if provided
-            if system_message:
-                model = google_genai.GenerativeModel(
-                    model_name=model_name,
-                    generation_config=generation_config,
-                    system_instruction=system_message,
-                )
-
-            # Start chat session with history
-            chat = model.start_chat(history=chat_history[:-1] if len(chat_history) > 1 else [])
-
-            # Send the last message
-            response = chat.send_message(
-                chat_history[-1]["parts"][0],
-                stream=kwargs.get("stream", False)
-                # safety_settings=DEFAULT_SAFETY_SETTINGS,
-            )
-            if kwargs.get("stream"):
-                result = {"content": gemini_stream_wrapper(response)}
-                
-            else:
-                result = {"content": response.text}
-
-        elif provider == "anthropic":
-            response = anthropic_client.messages.create(
-                model=model_name,
-                max_tokens=kwargs.get("max_tokens", DEFAULT_MAX_TOKENS),
-                temperature=kwargs.get("temperature", DEFAULT_TEMPERATURE),
-                messages=kwargs["messages"],
-            )
-            result = {"content": response.content[0].text}
-
-        else:
-            raise ValueError(f"Unsupported AI provider {provider}")
-
-        return result
-
-    except Exception as e:
-        if "Resource has been exhausted" in str(e):
-            print("Google API - sleep 60 seconds")
-            time.sleep(60)
-            raise ValueError("Google API - Resource has been exhausted - already sleep 60 seconds")
-        elif "block_reason" in str(e):
-            print("Google API - blocked - change to gpt-4o-mini")
-            kwargs["model"] = "gpt-4o-mini"
-            return ai_completion(**kwargs)
-        else:
-            print(f"ERROR ai_completion - {e}")
-            raise ValueError(e)
-
-
-@retry(wait=wait_exponential(multiplier=2, min=1, max=LLM_TIMEOUT), stop=stop_after_attempt(LLM_MAX_RETRIES))
-def ai_completion_with_backoff(**kwargs):
-    return ai_completion(**kwargs)
-
-
-def get_provider_client(model_name):
-    if "gpt" in model_name:
-        provider = "openai"
-    elif "gemini" in model_name:
-        provider = "google"
-    elif "claude" in model_name:
-        provider = "anthropic"
+def get_length(text, encode_model="gpt-4o-mini"):
+    if encode_model != "gpt-4o-mini":
+        enc = tiktoken.encoding_for_model(encode_model)
     else:
-        provider = model_name
-    return provider
-
-
-def ai_runall(**kwargs):
-    try:
-        return ai_completion_with_backoff(**kwargs)
-    except Exception as e:
-        print(f"ERROR || {e}")
-        return {"content": f"ERROR || {e}"}
-
-
-def ai_model_list():
-    return {
-        "openai": [model.id for model in openai_client.models.list()],
-        "google": [model.name.split("/")[-1] for model in google_genai.list_models()],
-        "anthropic": list(get_type_hints(anthropic_client.messages.create)["model"].__args__[1].__args__),
-    }
-
-
-def truncate_text(text, max_tokens=8000):
-    tokens = enc.encode(text)
-    return enc.decode(tokens[:max_tokens])
-
-
-def get_length(text):
+        enc = DEFAULT_ENCODE_MODEL
     return len(enc.encode(text))
 
 
-def test_api_call():
+def wrap_stream(stream) -> Generator:
+    for chunk in stream:
+        if chunk.choices[0].delta.content is not None:
+            yield chunk.choices[0].delta.content
+
+async def async_wrap_stream(stream) -> AsyncGenerator:
+    async for chunk in stream:
+        if chunk.choices[0].delta.content is not None:
+            yield chunk.choices[0].delta.content
+
+
+def gemini_completion(
+    model: str,
+    messages: list[dict],
+    **kwargs
+) -> dict:
+    """
+    Gemini completion function that handles Google Gemini models and File objects.
+    """
+    try:
+        # Extract temperature and max_tokens from kwargs
+        generation_config = {}
+        if 'temperature' in kwargs:
+            generation_config['temperature'] = kwargs['temperature']
+        if 'max_tokens' in kwargs:
+            generation_config['max_output_tokens'] = kwargs['max_tokens']
+        
+        # Create the Gemini model
+        gemini_model = genai.GenerativeModel(model_name=model)
+        
+        # Convert messages to Gemini format
+        # For now, we'll handle the simple case where there's one user message
+        # with content that may include File objects
+        if len(messages) == 1 and messages[0]["role"] == "user":
+            content = messages[0]["content"]
+            if isinstance(content, list):
+                # Handle mixed content (File objects and text)
+                response = gemini_model.generate_content(
+                    content,
+                    generation_config=generation_config
+                )
+            else:
+                # Handle simple text content
+                response = gemini_model.generate_content(
+                    content,
+                    generation_config=generation_config
+                )
+        else:
+            # For more complex conversation histories, we'd need to convert properly
+            # For now, just handle the simple case
+            raise NotImplementedError("Multi-turn conversations not yet supported for Gemini")
+        
+        return {"content": response.text}
+    except Exception as e:
+        logger.error(f"Error in Gemini completion: {e}", exc_info=True)
+        return {"content": f"Error in Gemini completion: {e}"}
+
+
+async def gemini_async_completion(
+    model: str,
+    messages: list[dict],
+    **kwargs
+) -> dict:
+    """
+    Async Gemini completion function that handles Google Gemini models and File objects.
+    """
+    try:
+        # Extract temperature and max_tokens from kwargs
+        generation_config = {}
+        if 'temperature' in kwargs:
+            generation_config['temperature'] = kwargs['temperature']
+        if 'max_tokens' in kwargs:
+            generation_config['max_output_tokens'] = kwargs['max_tokens']
+        
+        # Create the Gemini model
+        gemini_model = genai.GenerativeModel(model_name=model)
+        
+        # Convert messages to Gemini format
+        # For now, we'll handle the simple case where there's one user message
+        # with content that may include File objects
+        if len(messages) == 1 and messages[0]["role"] == "user":
+            content = messages[0]["content"]
+            if isinstance(content, list):
+                # Handle mixed content (File objects and text)
+                response = await gemini_model.generate_content_async(
+                    content,
+                    generation_config=generation_config
+                )
+            else:
+                # Handle simple text content
+                response = await gemini_model.generate_content_async(
+                    content,
+                    generation_config=generation_config
+                )
+        else:
+            # For more complex conversation histories, we'd need to convert properly
+            # For now, just handle the simple case
+            raise NotImplementedError("Multi-turn conversations not yet supported for Gemini")
+        
+        return {"content": response.text}
+    except Exception as e:
+        logger.error(f"Error in async Gemini completion: {e}", exc_info=True)
+        return {"content": f"Error in async Gemini completion: {e}"}
+
+
+def llm_completion(
+    model: str,
+    messages: list[dict],
+    client: OpenAI = DEFAULT_CLIENT,
+    **kwargs
+) -> str:
+    """
+    LLM completion with backoff and stream support.
+    Routes to appropriate handler based on model name.
+    """
+    # Route to Gemini handler if it's a Gemini model
+    if "gemini" in model.lower():
+        return gemini_completion(model, messages, **kwargs)
+    
+    # Original OpenAI handling
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            **kwargs
+        )
+        if kwargs.get("stream"):
+            return {"content": wrap_stream(response)}
+        else:
+            return {"content": response.choices[0].message.content}
+    except Exception as e:
+        logger.error(f"Error in LLM completion: {e}", exc_info=True)
+        return {"content": f"Error in LLM completion: {e}"}
+
+
+async def llm_async_completion(
+    model: str,
+    messages: list[dict],
+    client: AsyncOpenAI = DEFAULT_ASYNC_CLIENT,
+    **kwargs
+) -> str:
+    """
+    LLM async completion
+    Routes to appropriate handler based on model name.
+    """
+    # Route to Gemini handler if it's a Gemini model
+    if "gemini" in model.lower():
+        return await gemini_async_completion(model, messages, **kwargs)
+    
+    # Original OpenAI handling
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            **kwargs
+        )
+        if kwargs.get("stream"):    
+            return {"content": async_wrap_stream(response)}
+        else:
+            return {"content": response.choices[0].message.content}
+    except Exception as e:
+        logger.error(f"Error in LLM async completion: {e}", exc_info=True)
+        return {"content": f"Error in LLM async completion: {e}"} 
+
+
+def llm_model_list(client: OpenAI = DEFAULT_CLIENT):
+    return [model.id for model in client.models.list()]
+
+
+@retry(wait=wait_exponential(multiplier=2, min=1, max=LLM_TIMEOUT), stop=stop_after_attempt(LLM_MAX_RETRIES))
+def llm_completion_with_backoff(**kwargs):
+    return llm_completion(**kwargs)
+
+
+@retry(wait=wait_exponential(multiplier=2, min=1, max=LLM_TIMEOUT), stop=stop_after_attempt(LLM_MAX_RETRIES))
+async def llm_async_completion_with_backoff(**kwargs):
+    return await llm_async_completion(**kwargs)
+
+
+def llm_runall(**kwargs):
+    try:
+        return llm_completion_with_backoff(**kwargs)
+    except Exception as e:
+        print(f"ERROR || {e}")
+        return {"content": f"ERROR || {e}"}
+    
+
+async def llm_async_runall(**kwargs):
+    try:
+        return await llm_async_completion_with_backoff(**kwargs)
+    except Exception as e:
+        logger.error(f"ERROR || {e}")
+        return {"content": f"ERROR || {e}"}
+
+
+def test_api_call(model: str = "gpt-4o", stream: bool = False):
     messages = [{"role": "user", "content": "hello"}]
-    ai_completion(messages=messages, model="gpt-4o")
+    response = llm_completion(messages=messages, model=model, stream=stream)
+    if stream:
+        for chunk in response["content"]:
+            print(chunk)
+    else:
+        print(response["content"])
+
+
+async def test_async_api_call(model: str = "gpt-4o", stream: bool = False):
+    messages = [{"role": "user", "content": "hello"}]
+    response = await llm_async_completion(messages=messages, model=model, stream=stream)
+    if stream:
+        async for chunk in response["content"]:
+            print(chunk)
+    else:
+        print(response["content"])
+
+
+def test_custom_client(model: str = "gemini-2.5-flash", **kwargs):
+    client = OpenAI(
+        api_key=os.getenv("LLM_API_KEY"),
+        base_url=os.getenv("LLM_BASE_URL")
+    )
+    messages = [{"role": "user", "content": "what is capital of france?"}]
+    response = llm_completion(messages=messages, model=model, client=client, **kwargs)
+    print(response["content"])
+
+
+def test_model_list():
+    return llm_model_list()
 
 
 if __name__ == "__main__":
-    # ## Change your role here:
-    # role = "Sales representative"
-    # # reply "exit" to exit
-
-    # start_conversation(role=role)
-    # test_api_call()
-    
     import fire
     fire.Fire()

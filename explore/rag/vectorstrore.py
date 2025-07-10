@@ -40,7 +40,7 @@ def load_vectorstore(
 
 def initialize_vectorstore(documents, embeddings, db_path, collection_name, force_create=False, **kwargs):
     # Check if the collection already exists
-   
+
     existing_collections = get_collection_names(db_path=db_path)
 
     if collection_name in existing_collections and not force_create:
